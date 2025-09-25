@@ -1,0 +1,6 @@
+Flask==2.3.3
+neo4j==5.14.1
+python-dotenv==1.0.0
+gunicorn==21.2.0
+Werkzeug==2.3.7
+

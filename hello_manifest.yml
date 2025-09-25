@@ -1,0 +1,10 @@
+---
+applications:
+- name: hello-world-test
+  memory: 64M
+  disk_quota: 32M
+  instances: 1
+  buildpack: python_buildpack
+  stack: cflinuxfs3
+  command: python hello_world.py
+
