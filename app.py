@@ -59,67 +59,143 @@ def extract_folder_name_from_zip(zip_path):
                 logger.warning("Empty zip file")
                 return None
             
-            # Find the root folder name (first directory in the zip)
+            logger.info(f"Analyzing zip file contents: {len(file_names)} files")
+            logger.info(f"Sample files: {file_names[:5]}")
+            
+            # Strategy 1: Look for the most meaningful root folder
             root_folders = set()
             for file_name in file_names:
-                # Skip files in root, look for directories
                 if '/' in file_name:
                     root_folder = file_name.split('/')[0]
-                    root_folders.add(root_folder)
+                    # Skip common technical folders
+                    if root_folder.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+                        root_folders.add(root_folder)
             
             if root_folders:
-                # Use the first root folder found
-                folder_name = list(root_folders)[0]
+                # Choose the most meaningful folder name
+                folder_name = choose_best_folder_name(list(root_folders))
                 logger.info(f"Found root folder in zip: {folder_name}")
                 
                 # Clean up the folder name
-                folder_name = folder_name.replace('_', ' ').strip()
-                folder_name = ' '.join(folder_name.split())
+                folder_name = clean_folder_name(folder_name)
                 
-                # Remove common prefixes/suffixes
-                folder_name = folder_name.replace('iFlow', '').replace('iflow', '').strip()
-                folder_name = folder_name.replace('Integration Flow', '').strip()
-                folder_name = folder_name.replace('Flow', '').strip()
+                if folder_name and len(folder_name) > 2:
+                    return folder_name
+            
+            # Strategy 2: Look for .iflw files to determine the flow name
+            logger.info("No clear folder structure found, analyzing .iflw files")
+            iflow_files = [f for f in file_names if f.endswith('.iflw')]
+            if iflow_files:
+                # Extract name from .iflw file
+                iflow_file = iflow_files[0]
+                iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
+                logger.info(f"Found iFlow file: {iflow_name}")
                 
-                if not folder_name:
-                    folder_name = "iFlow Integration"
+                # Clean up the name
+                iflow_name = clean_folder_name(iflow_name)
                 
-                return folder_name
-            else:
-                # If no clear folder structure, try to extract from file names
-                logger.info("No clear folder structure found, analyzing file names")
-                
-                # Look for .iflw files to determine the flow name
-                iflow_files = [f for f in file_names if f.endswith('.iflw')]
-                if iflow_files:
-                    # Extract name from .iflw file
-                    iflow_file = iflow_files[0]
-                    iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
-                    logger.info(f"Found iFlow file: {iflow_name}")
-                    
-                    # Clean up the name
-                    iflow_name = iflow_name.replace('_', ' ').strip()
-                    iflow_name = ' '.join(iflow_name.split())
-                    
-                    return iflow_name if iflow_name else "iFlow Integration"
-                
-                # Fallback: use the zip filename
-                zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
-                # Remove timestamp prefix if present
-                if '_' in zip_basename:
-                    parts = zip_basename.split('_')
-                    if len(parts) > 1 and parts[0].isdigit():
-                        # Remove timestamp prefix
-                        zip_basename = '_'.join(parts[1:])
-                
-                zip_basename = zip_basename.replace('_', ' ').strip()
-                zip_basename = ' '.join(zip_basename.split())
-                
-                return zip_basename if zip_basename else "iFlow Integration"
+                if iflow_name and len(iflow_name) > 2:
+                    return iflow_name
+            
+            # Strategy 3: Look for other meaningful files
+            meaningful_files = [f for f in file_names if any(ext in f.lower() for ext in ['.xml', '.json', '.properties', '.config'])]
+            if meaningful_files:
+                # Try to extract name from meaningful files
+                for file_path in meaningful_files:
+                    if '/' in file_path:
+                        folder_name = file_path.split('/')[0]
+                        if folder_name.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+                            folder_name = clean_folder_name(folder_name)
+                            if folder_name and len(folder_name) > 2:
+                                logger.info(f"Found meaningful folder from file: {folder_name}")
+                                return folder_name
+            
+            # Strategy 4: Fallback to zip filename
+            zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
+            # Remove timestamp prefix if present
+            if '_' in zip_basename:
+                parts = zip_basename.split('_')
+                if len(parts) > 1 and parts[0].isdigit():
+                    # Remove timestamp prefix
+                    zip_basename = '_'.join(parts[1:])
+            
+            zip_basename = clean_folder_name(zip_basename)
+            
+            if zip_basename and len(zip_basename) > 2:
+                logger.info(f"Using zip filename: {zip_basename}")
+                return zip_basename
+            
+            # Final fallback
+            logger.warning("Could not extract meaningful folder name, using default")
+            return "iFlow Integration"
                 
     except Exception as e:
         logger.error(f"Error extracting folder name from zip: {e}")
         return None
+
+def choose_best_folder_name(folder_names):
+    """Choose the most meaningful folder name from a list."""
+    # Prioritize folders that look like actual iFlow names
+    meaningful_folders = []
+    
+    for folder in folder_names:
+        # Skip very short names
+        if len(folder) < 3:
+            continue
+        
+        # Skip common technical folders
+        if folder.lower() in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+            continue
+        
+        # Prefer folders with descriptive names
+        if any(word in folder.lower() for word in ['flow', 'integration', 'process', 'service', 'api', 'data', 'customer', 'order', 'material', 'product']):
+            meaningful_folders.insert(0, folder)  # Put at front
+        else:
+            meaningful_folders.append(folder)
+    
+    return meaningful_folders[0] if meaningful_folders else folder_names[0] if folder_names else "iFlow Integration"
+
+def clean_folder_name(folder_name):
+    """Clean up a folder name by removing common prefixes/suffixes and formatting."""
+    if not folder_name:
+        return None
+    
+    # Replace underscores with spaces
+    folder_name = folder_name.replace('_', ' ').strip()
+    
+    # Remove multiple spaces
+    folder_name = ' '.join(folder_name.split())
+    
+    # Remove common SAP/iFlow prefixes and suffixes
+    prefixes_to_remove = [
+        'iflow', 'iFlow', 'integration flow', 'integrationflow',
+        'sap', 'SAP', 'flow', 'Flow', 'integration', 'Integration'
+    ]
+    
+    suffixes_to_remove = [
+        'iflow', 'iFlow', 'flow', 'Flow', 'integration', 'Integration'
+    ]
+    
+    # Remove prefixes
+    for prefix in prefixes_to_remove:
+        if folder_name.lower().startswith(prefix.lower()):
+            folder_name = folder_name[len(prefix):].strip()
+            break
+    
+    # Remove suffixes
+    for suffix in suffixes_to_remove:
+        if folder_name.lower().endswith(suffix.lower()):
+            folder_name = folder_name[:-len(suffix)].strip()
+            break
+    
+    # Clean up any remaining issues
+    folder_name = ' '.join(folder_name.split())
+    
+    # If the name is too short or empty, return None
+    if len(folder_name) < 3:
+        return None
+    
+    return folder_name
 
 def extract_zip_file(zip_path, extract_to):
     """Extract a zip file to the specified directory."""
