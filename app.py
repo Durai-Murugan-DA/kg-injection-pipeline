@@ -544,6 +544,113 @@ def not_found(e):
         'error': 'Endpoint not found'
     }), 404
 
+@app.route('/api/upload', methods=['POST'])
+def upload_iflow_api():
+    """
+    API endpoint for direct file uploads (for n8n integration).
+    Expected: multipart/form-data with 'file' field containing a zip file.
+    """
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file provided in request'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected'
+            }), 400
+        
+        # Check if file has allowed extension
+        if not allowed_file(file.filename):
+            return jsonify({
+                'success': False,
+                'error': 'File must be a zip file (.zip)'
+            }), 400
+        
+        # Secure the filename
+        filename = secure_filename(file.filename)
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"{timestamp}_{filename}"
+        
+        # Extract the original folder name from the uploaded filename
+        original_filename = secure_filename(file.filename)
+        folder_name = original_filename.replace('.zip', '').replace('.ZIP', '')
+        
+        # Clean up the folder name - replace underscores with spaces and clean up
+        folder_name = folder_name.replace('_', ' ').strip()
+        # Remove any extra spaces
+        folder_name = ' '.join(folder_name.split())
+        
+        # Save uploaded file
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(upload_path)
+        logger.info(f"File uploaded: {upload_path}")
+        
+        # Create temporary directory for extraction
+        with tempfile.TemporaryDirectory() as temp_extract_dir:
+            # Extract the zip file
+            if not extract_zip_file(upload_path, temp_extract_dir):
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to extract zip file'
+                }), 400
+            
+            # Process the extracted iFlow folder with the original folder name
+            result = process_iflow_folder(temp_extract_dir, folder_name=folder_name)
+            
+            # Clean up uploaded file
+            try:
+                os.remove(upload_path)
+                logger.info(f"Cleaned up uploaded file: {upload_path}")
+            except Exception as e:
+                logger.warning(f"Could not clean up uploaded file: {e}")
+            
+            if result['success']:
+                return jsonify({
+                    'success': True,
+                    'message': f'iFlow processed successfully and Knowledge Graph created for folder: {result.get("folder_name", "Unknown")}',
+                    'statistics': result.get('statistics', {}),
+                    'iflow_file': result.get('iflow_file', ''),
+                    'folder_name': result.get('folder_name', ''),
+                    'timestamp': datetime.utcnow().isoformat()
+                }), 200
+            else:
+                # Check if it's a duplicate folder error
+                error_message = result.get('error', 'Unknown error occurred')
+                if 'already exists' in error_message.lower():
+                    return jsonify({
+                        'success': False,
+                        'error': f'Folder "{folder_name}" already exists in the database. Please use a different name or clear the existing folder first.',
+                        'folder_name': folder_name,
+                        'error_type': 'duplicate_folder'
+                    }), 409  # Conflict status code
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': error_message
+                    }), 500
+                
+    except RequestEntityTooLarge:
+        return jsonify({
+            'success': False,
+            'error': 'File too large. Maximum size is 100MB.'
+        }), 413
+    
+    except Exception as e:
+        logger.error(f"Unexpected error in upload API endpoint: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
 @app.route('/upload-base64', methods=['POST'])
 def upload_iflow_base64():
     """
