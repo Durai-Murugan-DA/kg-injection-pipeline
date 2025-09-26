@@ -62,7 +62,22 @@ def extract_folder_name_from_zip(zip_path):
             logger.info(f"Analyzing zip file contents: {len(file_names)} files")
             logger.info(f"All files in zip: {file_names}")
             
-            # Strategy 1: Look for the most meaningful root folder
+            # Strategy 1: Look for .iflw files first (most reliable)
+            iflow_files = [f for f in file_names if f.endswith('.iflw')]
+            if iflow_files:
+                # Extract name from .iflw file
+                iflow_file = iflow_files[0]
+                iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
+                logger.info(f"Found iFlow file: {iflow_name}")
+                
+                # Clean up the name
+                iflow_name = clean_folder_name(iflow_name)
+                
+                if iflow_name and len(iflow_name) > 2:
+                    logger.info(f"Using iFlow file name: {iflow_name}")
+                    return iflow_name
+            
+            # Strategy 2: Look for the most meaningful root folder
             root_folders = set()
             for file_name in file_names:
                 if '/' in file_name:
@@ -85,22 +100,6 @@ def extract_folder_name_from_zip(zip_path):
                     logger.info(f"Final folder name: {folder_name}")
                     return folder_name
             
-            # Strategy 2: Look for .iflw files to determine the flow name
-            logger.info("No clear folder structure found, analyzing .iflw files")
-            iflow_files = [f for f in file_names if f.endswith('.iflw')]
-            if iflow_files:
-                # Extract name from .iflw file
-                iflow_file = iflow_files[0]
-                iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
-                logger.info(f"Found iFlow file: {iflow_name}")
-                
-                # Clean up the name
-                iflow_name = clean_folder_name(iflow_name)
-                
-                if iflow_name and len(iflow_name) > 2:
-                    logger.info(f"Using iFlow file name: {iflow_name}")
-                    return iflow_name
-            
             # Strategy 3: Look for other meaningful files
             meaningful_files = [f for f in file_names if any(ext in f.lower() for ext in ['.xml', '.json', '.properties', '.config'])]
             if meaningful_files:
@@ -115,7 +114,7 @@ def extract_folder_name_from_zip(zip_path):
                                 return folder_name
             
             # Strategy 4: Look for any folder that contains business-meaningful keywords
-            business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'data', 'sync', 'replicate', 'transfer', 'export', 'import', 'pack', 'fee', 'erp', 'cpq', 'sap', 'business', 'suite']
+            business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'data', 'sync', 'replicate', 'transfer', 'export', 'import', 'pack', 'fee', 'erp', 'cpq', 'sap', 'business', 'suite', 'idoc', 'xml', 'flat', 'syntax', 'conversion', 'assembly', 'process', 'xslt']
             for file_name in file_names:
                 if '/' in file_name:
                     folder_name = file_name.split('/')[0]
@@ -205,11 +204,13 @@ def clean_folder_name(folder_name):
     # Remove common SAP/iFlow prefixes and suffixes
     prefixes_to_remove = [
         'iflow', 'iFlow', 'integration flow', 'integrationflow',
-        'sap', 'SAP', 'flow', 'Flow', 'integration', 'Integration'
+        'sap', 'SAP', 'flow', 'Flow', 'integration', 'Integration',
+        'sap-', 'SAP-', 'sap_', 'SAP_'
     ]
     
     suffixes_to_remove = [
-        'iflow', 'iFlow', 'flow', 'Flow', 'integration', 'Integration'
+        'iflow', 'iFlow', 'flow', 'Flow', 'integration', 'Integration',
+        '.iflw', '.xml', '.json'
     ]
     
     # Remove prefixes
