@@ -68,7 +68,7 @@ def extract_folder_name_from_zip(zip_path):
                 if '/' in file_name:
                     root_folder = file_name.split('/')[0]
                     # Skip common technical folders
-                    if root_folder.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+                    if root_folder.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf', 'maven', 'gradle']:
                         root_folders.add(root_folder)
             
             if root_folders:
@@ -104,13 +104,24 @@ def extract_folder_name_from_zip(zip_path):
                 for file_path in meaningful_files:
                     if '/' in file_path:
                         folder_name = file_path.split('/')[0]
-                        if folder_name.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+                        if folder_name.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf', 'maven', 'gradle']:
                             folder_name = clean_folder_name(folder_name)
                             if folder_name and len(folder_name) > 2:
                                 logger.info(f"Found meaningful folder from file: {folder_name}")
                                 return folder_name
             
-            # Strategy 4: Fallback to zip filename
+            # Strategy 4: Look for any folder that contains business-meaningful keywords
+            business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'data', 'sync', 'replicate', 'transfer', 'export', 'import']
+            for file_name in file_names:
+                if '/' in file_name:
+                    folder_name = file_name.split('/')[0]
+                    if any(keyword in folder_name.lower() for keyword in business_keywords):
+                        folder_name = clean_folder_name(folder_name)
+                        if folder_name and len(folder_name) > 2:
+                            logger.info(f"Found business-meaningful folder: {folder_name}")
+                            return folder_name
+            
+            # Strategy 5: Fallback to zip filename
             zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
             # Remove timestamp prefix if present
             if '_' in zip_basename:
@@ -138,22 +149,35 @@ def choose_best_folder_name(folder_names):
     # Prioritize folders that look like actual iFlow names
     meaningful_folders = []
     
+    # Business keywords that indicate meaningful folder names
+    business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'service', 'api', 'data', 'sync', 'replicate', 'transfer', 'export', 'import', 'sales', 'purchase', 'inventory', 'warehouse', 'logistics', 'finance', 'hr', 'employee', 'supplier', 'vendor']
+    
     for folder in folder_names:
         # Skip very short names
         if len(folder) < 3:
             continue
         
         # Skip common technical folders
-        if folder.lower() in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf']:
+        if folder.lower() in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf', 'maven', 'gradle', 'node_modules', 'dist', 'out']:
             continue
         
-        # Prefer folders with descriptive names
-        if any(word in folder.lower() for word in ['flow', 'integration', 'process', 'service', 'api', 'data', 'customer', 'order', 'material', 'product']):
+        # Prefer folders with business-meaningful keywords
+        if any(keyword in folder.lower() for keyword in business_keywords):
             meaningful_folders.insert(0, folder)  # Put at front
         else:
             meaningful_folders.append(folder)
     
-    return meaningful_folders[0] if meaningful_folders else folder_names[0] if folder_names else "iFlow Integration"
+    # If we have meaningful folders, return the best one
+    if meaningful_folders:
+        return meaningful_folders[0]
+    
+    # If no meaningful folders, return the first non-technical folder
+    for folder in folder_names:
+        if folder.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf', 'maven', 'gradle', 'node_modules', 'dist', 'out']:
+            return folder
+    
+    # Last resort
+    return folder_names[0] if folder_names else "iFlow Integration"
 
 def clean_folder_name(folder_name):
     """Clean up a folder name by removing common prefixes/suffixes and formatting."""
