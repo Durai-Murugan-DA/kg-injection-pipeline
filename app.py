@@ -48,6 +48,79 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+def extract_folder_name_from_zip(zip_path):
+    """Extract the folder name from a zip file by examining its contents."""
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Get all file names in the zip
+            file_names = zip_ref.namelist()
+            
+            if not file_names:
+                logger.warning("Empty zip file")
+                return None
+            
+            # Find the root folder name (first directory in the zip)
+            root_folders = set()
+            for file_name in file_names:
+                # Skip files in root, look for directories
+                if '/' in file_name:
+                    root_folder = file_name.split('/')[0]
+                    root_folders.add(root_folder)
+            
+            if root_folders:
+                # Use the first root folder found
+                folder_name = list(root_folders)[0]
+                logger.info(f"Found root folder in zip: {folder_name}")
+                
+                # Clean up the folder name
+                folder_name = folder_name.replace('_', ' ').strip()
+                folder_name = ' '.join(folder_name.split())
+                
+                # Remove common prefixes/suffixes
+                folder_name = folder_name.replace('iFlow', '').replace('iflow', '').strip()
+                folder_name = folder_name.replace('Integration Flow', '').strip()
+                folder_name = folder_name.replace('Flow', '').strip()
+                
+                if not folder_name:
+                    folder_name = "iFlow Integration"
+                
+                return folder_name
+            else:
+                # If no clear folder structure, try to extract from file names
+                logger.info("No clear folder structure found, analyzing file names")
+                
+                # Look for .iflw files to determine the flow name
+                iflow_files = [f for f in file_names if f.endswith('.iflw')]
+                if iflow_files:
+                    # Extract name from .iflw file
+                    iflow_file = iflow_files[0]
+                    iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
+                    logger.info(f"Found iFlow file: {iflow_name}")
+                    
+                    # Clean up the name
+                    iflow_name = iflow_name.replace('_', ' ').strip()
+                    iflow_name = ' '.join(iflow_name.split())
+                    
+                    return iflow_name if iflow_name else "iFlow Integration"
+                
+                # Fallback: use the zip filename
+                zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
+                # Remove timestamp prefix if present
+                if '_' in zip_basename:
+                    parts = zip_basename.split('_')
+                    if len(parts) > 1 and parts[0].isdigit():
+                        # Remove timestamp prefix
+                        zip_basename = '_'.join(parts[1:])
+                
+                zip_basename = zip_basename.replace('_', ' ').strip()
+                zip_basename = ' '.join(zip_basename.split())
+                
+                return zip_basename if zip_basename else "iFlow Integration"
+                
+    except Exception as e:
+        logger.error(f"Error extracting folder name from zip: {e}")
+        return None
+
 def extract_zip_file(zip_path, extract_to):
     """Extract a zip file to the specified directory."""
     try:
@@ -604,8 +677,15 @@ def handle_raw_binary_upload():
         
         logger.info(f"Raw binary file saved: {temp_path} ({len(file_data)} bytes)")
         
+        # Extract folder name from zip file contents
+        folder_name = extract_folder_name_from_zip(temp_path)
+        if not folder_name:
+            folder_name = f"n8n_Upload_{timestamp}"
+        
+        logger.info(f"Extracted folder name: {folder_name}")
+        
         # Process the file
-        return process_uploaded_file(temp_path, "n8n Upload")
+        return process_uploaded_file(temp_path, folder_name)
         
     except Exception as e:
         logger.error(f"Error handling raw binary upload: {e}")
@@ -650,12 +730,17 @@ def handle_multipart_upload():
         file.save(temp_path)
         logger.info(f"Multipart file saved: {temp_path}")
         
-        # Extract folder name from filename
-        folder_name = filename.replace('.zip', '').replace('.ZIP', '')
-        folder_name = folder_name.replace('_', ' ').strip()
-        folder_name = ' '.join(folder_name.split())
+        # Extract folder name from zip file contents
+        folder_name = extract_folder_name_from_zip(temp_path)
         if not folder_name:
-            folder_name = "Uploaded iFlow"
+            # Fallback to filename-based naming
+            folder_name = filename.replace('.zip', '').replace('.ZIP', '')
+            folder_name = folder_name.replace('_', ' ').strip()
+            folder_name = ' '.join(folder_name.split())
+            if not folder_name:
+                folder_name = "Uploaded iFlow"
+        
+        logger.info(f"Extracted folder name: {folder_name}")
         
         # Process the file
         return process_uploaded_file(temp_path, folder_name)
@@ -715,12 +800,17 @@ def handle_json_upload():
         
         logger.info(f"JSON base64 file saved: {temp_path}")
         
-        # Extract folder name from filename
-        folder_name = filename.replace('.zip', '').replace('.ZIP', '')
-        folder_name = folder_name.replace('_', ' ').strip()
-        folder_name = ' '.join(folder_name.split())
+        # Extract folder name from zip file contents
+        folder_name = extract_folder_name_from_zip(temp_path)
         if not folder_name:
-            folder_name = "Uploaded iFlow"
+            # Fallback to filename-based naming
+            folder_name = filename.replace('.zip', '').replace('.ZIP', '')
+            folder_name = folder_name.replace('_', ' ').strip()
+            folder_name = ' '.join(folder_name.split())
+            if not folder_name:
+                folder_name = "Uploaded iFlow"
+        
+        logger.info(f"Extracted folder name: {folder_name}")
         
         # Process the file
         return process_uploaded_file(temp_path, folder_name)
