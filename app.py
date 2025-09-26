@@ -547,9 +547,128 @@ def not_found(e):
 @app.route('/n8n/upload', methods=['POST'])
 def upload_iflow_n8n():
     """
-    n8n-friendly endpoint for file uploads.
-    Expected: JSON with 'file_data' (base64 encoded) and 'filename'.
+    Universal n8n-friendly endpoint for file uploads.
+    Supports:
+    1. Raw binary uploads (Content-Type: application/x-zip-compressed)
+    2. Multipart/form-data uploads (Content-Type: multipart/form-data)
+    3. JSON uploads with base64 data (Content-Type: application/json)
     """
+    try:
+        content_type = request.content_type or ''
+        logger.info(f"Received upload request with Content-Type: {content_type}")
+        
+        # Handle different content types
+        if 'application/x-zip-compressed' in content_type or 'application/octet-stream' in content_type:
+            # Raw binary upload from n8n
+            return handle_raw_binary_upload()
+        elif 'multipart/form-data' in content_type:
+            # Traditional multipart upload
+            return handle_multipart_upload()
+        elif 'application/json' in content_type:
+            # JSON with base64 data
+            return handle_json_upload()
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Unsupported Content-Type: {content_type}. Supported types: application/x-zip-compressed, multipart/form-data, application/json'
+            }), 415
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in n8n upload endpoint: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+def handle_raw_binary_upload():
+    """Handle raw binary file uploads from n8n."""
+    try:
+        # Get raw binary data
+        file_data = request.get_data()
+        
+        if not file_data:
+            return jsonify({
+                'success': False,
+                'error': 'No file data received'
+            }), 400
+        
+        # Generate filename with timestamp
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"{timestamp}_n8n_upload.zip"
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # Save raw binary data to file
+        with open(temp_path, 'wb') as f:
+            f.write(file_data)
+        
+        logger.info(f"Raw binary file saved: {temp_path} ({len(file_data)} bytes)")
+        
+        # Process the file
+        return process_uploaded_file(temp_path, "n8n Upload")
+        
+    except Exception as e:
+        logger.error(f"Error handling raw binary upload: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Error processing raw binary upload: {str(e)}'
+        }), 500
+
+def handle_multipart_upload():
+    """Handle traditional multipart/form-data uploads."""
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file provided in multipart request'
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected'
+            }), 400
+        
+        # Check if file has allowed extension
+        if not allowed_file(file.filename):
+            return jsonify({
+                'success': False,
+                'error': 'File must be a zip file (.zip)'
+            }), 400
+        
+        # Secure the filename
+        filename = secure_filename(file.filename)
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        temp_filename = f"{timestamp}_{filename}"
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], temp_filename)
+        
+        # Save uploaded file
+        file.save(temp_path)
+        logger.info(f"Multipart file saved: {temp_path}")
+        
+        # Extract folder name from filename
+        folder_name = filename.replace('.zip', '').replace('.ZIP', '')
+        folder_name = folder_name.replace('_', ' ').strip()
+        folder_name = ' '.join(folder_name.split())
+        if not folder_name:
+            folder_name = "Uploaded iFlow"
+        
+        # Process the file
+        return process_uploaded_file(temp_path, folder_name)
+        
+    except Exception as e:
+        logger.error(f"Error handling multipart upload: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Error processing multipart upload: {str(e)}'
+        }), 500
+
+def handle_json_upload():
+    """Handle JSON uploads with base64 data."""
     try:
         data = request.get_json()
         
@@ -594,7 +713,7 @@ def upload_iflow_n8n():
         with open(temp_path, 'wb') as f:
             f.write(file_data)
         
-        logger.info(f"n8n file saved: {temp_path}")
+        logger.info(f"JSON base64 file saved: {temp_path}")
         
         # Extract folder name from filename
         folder_name = filename.replace('.zip', '').replace('.ZIP', '')
@@ -603,10 +722,23 @@ def upload_iflow_n8n():
         if not folder_name:
             folder_name = "Uploaded iFlow"
         
+        # Process the file
+        return process_uploaded_file(temp_path, folder_name)
+        
+    except Exception as e:
+        logger.error(f"Error handling JSON upload: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Error processing JSON upload: {str(e)}'
+        }), 500
+
+def process_uploaded_file(file_path, folder_name):
+    """Common processing logic for all upload types."""
+    try:
         # Create temporary directory for extraction
         with tempfile.TemporaryDirectory() as temp_extract_dir:
             # Extract the zip file
-            if not extract_zip_file(temp_path, temp_extract_dir):
+            if not extract_zip_file(file_path, temp_extract_dir):
                 return jsonify({
                     'success': False,
                     'error': 'Failed to extract zip file'
@@ -615,12 +747,12 @@ def upload_iflow_n8n():
             # Process the extracted iFlow folder
             result = process_iflow_folder(temp_extract_dir, folder_name=folder_name)
             
-            # Clean up temporary file
+            # Clean up uploaded file
             try:
-                os.remove(temp_path)
-                logger.info(f"Cleaned up temporary file: {temp_path}")
+                os.remove(file_path)
+                logger.info(f"Cleaned up uploaded file: {file_path}")
             except Exception as e:
-                logger.warning(f"Could not clean up temporary file: {e}")
+                logger.warning(f"Could not clean up uploaded file: {e}")
             
             if result['success']:
                 return jsonify({
@@ -646,13 +778,12 @@ def upload_iflow_n8n():
                         'success': False,
                         'error': error_message
                     }), 500
-                
+                    
     except Exception as e:
-        logger.error(f"Unexpected error in n8n upload endpoint: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error processing uploaded file: {e}")
         return jsonify({
             'success': False,
-            'error': f'Internal server error: {str(e)}'
+            'error': f'Error processing file: {str(e)}'
         }), 500
 
 @app.route('/api/upload', methods=['POST'])
