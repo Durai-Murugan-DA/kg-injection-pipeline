@@ -51,6 +51,8 @@ def allowed_file(filename):
 def extract_folder_name_from_zip(zip_path):
     """Extract the folder name from a zip file by examining its contents."""
     try:
+        logger.info(f"=== STARTING FOLDER NAME EXTRACTION FOR: {zip_path} ===")
+        
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             # Get all file names in the zip
             file_names = zip_ref.namelist()
@@ -59,25 +61,55 @@ def extract_folder_name_from_zip(zip_path):
                 logger.warning("Empty zip file")
                 return None
             
-            logger.info(f"Analyzing zip file contents: {len(file_names)} files")
+            logger.info(f"=== ZIP FILE ANALYSIS ===")
+            logger.info(f"Total files in zip: {len(file_names)}")
             logger.info(f"All files in zip: {file_names}")
             
-            # Strategy 1: Look for .iflw files first (most reliable)
+            # Strategy 0: Use zip filename first (most reliable for user-uploaded files)
+            logger.info(f"=== STRATEGY 0: ZIP FILENAME (PRIORITY) ===")
+            zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
+            logger.info(f"Original zip basename: '{zip_basename}'")
+            
+            # Remove timestamp prefix if present
+            if '_' in zip_basename:
+                parts = zip_basename.split('_')
+                if len(parts) > 1 and parts[0].isdigit():
+                    # Remove timestamp prefix
+                    zip_basename = '_'.join(parts[1:])
+                    logger.info(f"Removed timestamp prefix: '{zip_basename}'")
+            
+            # Don't clean the zip filename too aggressively - it's the user's intended name
+            zip_basename = zip_basename.replace('_', ' ').strip()
+            zip_basename = ' '.join(zip_basename.split())
+            
+            if zip_basename and len(zip_basename) > 2:
+                logger.info(f"✅ USING zip filename: '{zip_basename}'")
+                return zip_basename
+            else:
+                logger.warning(f"❌ Zip filename too short: '{zip_basename}'")
+            
+            # Strategy 1: Look for .iflw files (fallback)
             iflow_files = [f for f in file_names if f.endswith('.iflw')]
+            logger.info(f"=== STRATEGY 1: .iflw FILES ===")
+            logger.info(f"Found {len(iflow_files)} .iflw files: {iflow_files}")
+            
             if iflow_files:
                 # Extract name from .iflw file
                 iflow_file = iflow_files[0]
                 iflow_name = os.path.splitext(os.path.basename(iflow_file))[0]
-                logger.info(f"Found iFlow file: {iflow_name}")
+                logger.info(f"Extracted iFlow file name: '{iflow_name}'")
                 
                 # Clean up the name
                 iflow_name = clean_folder_name(iflow_name)
                 
                 if iflow_name and len(iflow_name) > 2:
-                    logger.info(f"Using iFlow file name: {iflow_name}")
+                    logger.info(f"✅ USING iFlow file name: '{iflow_name}'")
                     return iflow_name
+                else:
+                    logger.warning(f"❌ iFlow file name too short after cleaning: '{iflow_name}'")
             
             # Strategy 2: Look for the most meaningful root folder
+            logger.info(f"=== STRATEGY 2: ROOT FOLDERS ===")
             root_folders = set()
             for file_name in file_names:
                 if '/' in file_name:
@@ -91,17 +123,22 @@ def extract_folder_name_from_zip(zip_path):
             if root_folders:
                 # Choose the most meaningful folder name
                 folder_name = choose_best_folder_name(list(root_folders))
-                logger.info(f"Selected best folder: {folder_name}")
+                logger.info(f"Selected best folder: '{folder_name}'")
                 
                 # Clean up the folder name
                 folder_name = clean_folder_name(folder_name)
                 
                 if folder_name and len(folder_name) > 2:
-                    logger.info(f"Final folder name: {folder_name}")
+                    logger.info(f"✅ USING root folder name: '{folder_name}'")
                     return folder_name
+                else:
+                    logger.warning(f"❌ Root folder name too short after cleaning: '{folder_name}'")
             
             # Strategy 3: Look for other meaningful files
+            logger.info(f"=== STRATEGY 3: MEANINGFUL FILES ===")
             meaningful_files = [f for f in file_names if any(ext in f.lower() for ext in ['.xml', '.json', '.properties', '.config'])]
+            logger.info(f"Found meaningful files: {meaningful_files}")
+            
             if meaningful_files:
                 # Try to extract name from meaningful files
                 for file_path in meaningful_files:
@@ -110,41 +147,27 @@ def extract_folder_name_from_zip(zip_path):
                         if folder_name.lower() not in ['src', 'target', 'build', 'bin', 'lib', 'resources', 'meta-inf', 'web-inf', 'maven', 'gradle', 'node_modules', 'dist', 'out', 'test', 'tests']:
                             folder_name = clean_folder_name(folder_name)
                             if folder_name and len(folder_name) > 2:
-                                logger.info(f"Found meaningful folder from file: {folder_name}")
+                                logger.info(f"✅ USING meaningful folder from file: '{folder_name}'")
                                 return folder_name
             
             # Strategy 4: Look for any folder that contains business-meaningful keywords
-            business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'data', 'sync', 'replicate', 'transfer', 'export', 'import', 'pack', 'fee', 'erp', 'cpq', 'sap', 'business', 'suite', 'idoc', 'xml', 'flat', 'syntax', 'conversion', 'assembly', 'process', 'xslt']
+            logger.info(f"=== STRATEGY 4: BUSINESS KEYWORDS ===")
+            business_keywords = ['customer', 'order', 'material', 'product', 'integration', 'flow', 'process', 'data', 'sync', 'replicate', 'transfer', 'export', 'import', 'pack', 'fee', 'erp', 'cpq', 'sap', 'business', 'suite', 'idoc', 'xml', 'flat', 'syntax', 'conversion', 'assembly', 'process', 'xslt', 'pricing', 'conditions', 'classifications']
             for file_name in file_names:
                 if '/' in file_name:
                     folder_name = file_name.split('/')[0]
                     if any(keyword in folder_name.lower() for keyword in business_keywords):
                         folder_name = clean_folder_name(folder_name)
                         if folder_name and len(folder_name) > 2:
-                            logger.info(f"Found business-meaningful folder: {folder_name}")
+                            logger.info(f"✅ USING business-meaningful folder: '{folder_name}'")
                             return folder_name
             
-            # Strategy 5: Fallback to zip filename
-            zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
-            # Remove timestamp prefix if present
-            if '_' in zip_basename:
-                parts = zip_basename.split('_')
-                if len(parts) > 1 and parts[0].isdigit():
-                    # Remove timestamp prefix
-                    zip_basename = '_'.join(parts[1:])
-            
-            zip_basename = clean_folder_name(zip_basename)
-            
-            if zip_basename and len(zip_basename) > 2:
-                logger.info(f"Using zip filename: {zip_basename}")
-                return zip_basename
-            
             # Final fallback
-            logger.warning("Could not extract meaningful folder name, using default")
+            logger.warning("❌ Could not extract meaningful folder name, using default")
             return "iFlow Integration"
                 
     except Exception as e:
-        logger.error(f"Error extracting folder name from zip: {e}")
+        logger.error(f"❌ Error extracting folder name from zip: {e}")
         return None
 
 def choose_best_folder_name(folder_names):
