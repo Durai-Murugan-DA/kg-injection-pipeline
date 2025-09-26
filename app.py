@@ -822,12 +822,25 @@ def handle_raw_binary_upload():
         
         logger.info(f"Raw binary file saved: {temp_path} ({len(file_data)} bytes)")
         
-        # Extract folder name from zip file contents
-        folder_name = extract_folder_name_from_zip(temp_path)
-        if not folder_name:
+        # Extract folder name from zip filename (most reliable for user uploads)
+        zip_filename = os.path.basename(temp_path)
+        folder_name = os.path.splitext(zip_filename)[0]
+        
+        # Remove timestamp prefix if present
+        if '_' in folder_name:
+            parts = folder_name.split('_')
+            if len(parts) > 1 and parts[0].isdigit():
+                # Remove timestamp prefix
+                folder_name = '_'.join(parts[1:])
+        
+        # Clean up the folder name - replace underscores with spaces
+        folder_name = folder_name.replace('_', ' ').strip()
+        folder_name = ' '.join(folder_name.split())
+        
+        if not folder_name or len(folder_name) < 3:
             folder_name = f"n8n_Upload_{timestamp}"
         
-        logger.info(f"Extracted folder name: {folder_name}")
+        logger.info(f"Extracted folder name from filename: {folder_name}")
         
         # Process the file
         return process_uploaded_file(temp_path, folder_name)
@@ -875,17 +888,15 @@ def handle_multipart_upload():
         file.save(temp_path)
         logger.info(f"Multipart file saved: {temp_path}")
         
-        # Extract folder name from zip file contents
-        folder_name = extract_folder_name_from_zip(temp_path)
-        if not folder_name:
-            # Fallback to filename-based naming
-            folder_name = filename.replace('.zip', '').replace('.ZIP', '')
-            folder_name = folder_name.replace('_', ' ').strip()
-            folder_name = ' '.join(folder_name.split())
-            if not folder_name:
-                folder_name = "Uploaded iFlow"
+        # Extract folder name from zip filename (most reliable for user uploads)
+        folder_name = filename.replace('.zip', '').replace('.ZIP', '')
+        folder_name = folder_name.replace('_', ' ').strip()
+        folder_name = ' '.join(folder_name.split())
         
-        logger.info(f"Extracted folder name: {folder_name}")
+        if not folder_name or len(folder_name) < 3:
+            folder_name = "Uploaded iFlow"
+        
+        logger.info(f"Extracted folder name from filename: {folder_name}")
         
         # Process the file
         return process_uploaded_file(temp_path, folder_name)
@@ -945,17 +956,15 @@ def handle_json_upload():
         
         logger.info(f"JSON base64 file saved: {temp_path}")
         
-        # Extract folder name from zip file contents
-        folder_name = extract_folder_name_from_zip(temp_path)
-        if not folder_name:
-            # Fallback to filename-based naming
-            folder_name = filename.replace('.zip', '').replace('.ZIP', '')
-            folder_name = folder_name.replace('_', ' ').strip()
-            folder_name = ' '.join(folder_name.split())
-            if not folder_name:
-                folder_name = "Uploaded iFlow"
+        # Extract folder name from zip filename (most reliable for user uploads)
+        folder_name = filename.replace('.zip', '').replace('.ZIP', '')
+        folder_name = folder_name.replace('_', ' ').strip()
+        folder_name = ' '.join(folder_name.split())
         
-        logger.info(f"Extracted folder name: {folder_name}")
+        if not folder_name or len(folder_name) < 3:
+            folder_name = "Uploaded iFlow"
+        
+        logger.info(f"Extracted folder name from filename: {folder_name}")
         
         # Process the file
         return process_uploaded_file(temp_path, folder_name)
