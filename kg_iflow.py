@@ -392,11 +392,11 @@ class IFlowKnowledgeGraph:
             return False
         
         # Get the component type and activity type
-        component_type = protocol_data.get('component_type', '').lower()
-        activity_type = protocol_data.get('activity_type', '').lower()
-        transport_protocol = protocol_data.get('transport_protocol', '').lower()
-        message_protocol = protocol_data.get('message_protocol', '').lower()
-        adapter_name = protocol_data.get('adapter_name', '').lower()
+        component_type = (protocol_data.get('component_type') or '').lower()
+        activity_type = (protocol_data.get('activity_type') or '').lower()
+        transport_protocol = (protocol_data.get('transport_protocol') or '').lower()
+        message_protocol = (protocol_data.get('message_protocol') or '').lower()
+        adapter_name = (protocol_data.get('adapter_name') or '').lower()
         
         # Exclude events and non-protocol activities
         excluded_activities = [
