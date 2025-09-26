@@ -241,13 +241,18 @@ def process_iflow_folder(extracted_path, folder_name=None):
         if not folder_name:
             folder_name = os.path.basename(extracted_path) or "Uploaded_iFlow"
         
+        logger.info(f"Original folder name: '{folder_name}'")
+        
         # Clean up the folder name - replace underscores with spaces and clean up
         folder_name = folder_name.replace('_', ' ').strip()
-        # Remove any extra spaces and keep only alphanumeric, spaces, and hyphens
+        # Remove any extra spaces but keep meaningful characters
         folder_name = ' '.join(folder_name.split())
-        folder_name = ''.join(c for c in folder_name if c.isalnum() or c in [' ', '-']).strip()
+        # Only remove truly problematic characters, keep meaningful business names
+        folder_name = ''.join(c for c in folder_name if c.isalnum() or c in [' ', '-', '(', ')', '&', '/']).strip()
         if not folder_name:
             folder_name = "Uploaded iFlow"
+        
+        logger.info(f"Final folder name: '{folder_name}'")
         
         # Create a temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
